@@ -1,6 +1,5 @@
 import feedparser
 import smtplib
-import csv
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
@@ -13,88 +12,49 @@ SMTP_SERVER = "smtp.gmail.com"  # e.g., smtp.gmail.com for Gmail
 SMTP_PORT = 587
 SENDER_EMAIL = "your_email@gmail.com"
 SENDER_PASSWORD = "your_app_password"  # Use an App Password, not your main password
+RECIPIENT_EMAIL = "customer_email@example.com"
 
-# Default RSS Feeds (used if customer doesn't specify custom links)
-DEFAULT_FEEDS = {
-    "energy": [
+# Topics and corresponding RSS Feeds 
+# Note: In a production environment, you might use a News API (like NewsAPI.org or Bing News Search)
+# Here we use public RSS feeds as a free alternative.
+TOPICS = {
+    "Energy": [
         "https://www.reutersagency.com/feed/?best-topics=energy&post_type=best",
         "https://renewablesnow.com/feed/",
     ],
-    "waste": [
+    "Waste & Circular Economy": [
         "https://www.wastedive.com/feeds/news/",
         "https://www.recyclingtoday.com/rss.aspx",
     ],
-    "wastewater": [
+    "Water & Wastewater": [
         "https://www.waterworld.com/rss.xml",
         "https://www.wwdmag.com/rss.xml",
     ],
-    "chemical": [
+    "Chemicals": [
         "https://www.chemweek.com/rss",
         "https://www.chemicalwatch.com/feed",
     ],
-    "biodiversity": [
+    "Biodiversity": [
         "https://www.sciencedaily.com/rss/environment/biodiversity.xml",
         "https://news.mongabay.com/feed/",
     ],
-    "climate": [
+    "Climate Change": [
         "https://www.climatecentral.org/rss",
         "https://carbonbrief.org/feed/",
     ]
 }
 
-CUSTOMER_FILE = "customers.csv"
-
 # ================= FUNCTIONS =================
 
-def load_customers():
-    """Loads customer data from the CSV file."""
-    customers = []
-    if not os.path.exists(CUSTOMER_FILE):
-        print(f"Error: {CUSTOMER_FILE} not found.")
-        return customers
-    
-    with open(CUSTOMER_FILE, mode='r', encoding='utf-8') as file:
-        reader = csv.DictReader(file)
-        for row in reader:
-            customers.append({
-                "name": row['customer_name'],
-                "email": row['customer_email'],
-                "topics": [t.strip().lower() for t in row['customer_topics'].split(',')],
-                "links": [l.strip() for l in row['customer_web_links'].split(',')] if row['customer_web_links'] else []
-            })
-    return customers
-
-def get_feeds_for_customer(topics, links):
-    """Determines which RSS feeds to use based on customer topics and custom links."""
-    selected_feeds = {}
-    
-    # If customer provided custom links, use those directly mapped to their requested topics
-    if links:
-        # Assign custom links to the first topic requested, or create a generic bucket
-        # For simplicity, we map the custom links to the topics they requested.
-        # Note: RSS feeds usually cover specific topics. If they provide a link, we assume it's relevant.
-        # We will treat custom links as the primary source for the requested topics.
-        for topic in topics:
-            selected_feeds[topic] = links
-    else:
-        # Otherwise, use default feeds for the requested topics
-        for topic in topics:
-            if topic in DEFAULT_FEEDS:
-                selected_feeds[topic] = DEFAULT_FEEDS[topic]
-            else:
-                print(f"Warning: No default feed found for topic '{topic}'.")
-                
-    return selected_feeds
-
-def fetch_news(feeds_dict, days_back=7):
+def fetch_news(topics, days_back=7):
     """Fetches news items from RSS feeds for specified topics."""
-    collected_news = {topic: [] for topic in feeds_dict.keys()}
+    collected_news = {topic: [] for topic in topics.keys()}
     cutoff_date = datetime.now() - timedelta(days=days_back)
 
     print(f"Fetching news since {cutoff_date.date()}...")
 
-    for topic, feed_urls in feeds_dict.items():
-        for feed_url in feed_urls:
+    for topic, feeds in topics.items():
+        for feed_url in feeds:
             try:
                 feed = feedparser.parse(feed_url)
                 for entry in feed.entries:
@@ -119,7 +79,7 @@ def fetch_news(feeds_dict, days_back=7):
     
     return collected_news
 
-def create_email_body(news_data, customer_name):
+def create_email_body(news_data):
     """Generates an HTML email body."""
     html = """
     <html>
@@ -139,18 +99,16 @@ def create_email_body(news_data, customer_name):
     <body>
         <div class="container">
             <h1>Weekly Sustainability Digest</h1>
-            <p>Hello {customer},</p>
-            <p>Here is your weekly update on sustainability news covering your selected topics.</p>
+            <p>Hello,</p>
+            <p>Here is your weekly update on sustainability news covering Energy, Waste, Water, Chemicals, Biodiversity, and Climate.</p>
             <p><em>Report generated on: {date}</em></p>
-    """.format(customer=customer_name, date=datetime.now().strftime("%Y-%m-%d"))
+    """.format(date=datetime.now().strftime("%Y-%m-%d"))
 
     total_articles = 0
 
     for topic, articles in news_data.items():
         if articles:
-            # Capitalize topic for display
-            display_topic = topic.capitalize()
-            html += f"<h2>{display_topic}</h2>"
+            html += f"<h2>{topic}</h2>"
             for item in articles[:5]:  # Limit to top 5 per topic to keep email concise
                 total_articles += 1
                 html += """
@@ -166,8 +124,7 @@ def create_email_body(news_data, customer_name):
                     summary=item['summary']
                 )
         else:
-            display_topic = topic.capitalize()
-            html += f"<h2>{display_topic}</h2><p>No major news found this week.</p>"
+            html += f"<h2>{topic}</h2><p>No major news found this week.</p>"
 
     if total_articles == 0:
         html += "<p><strong>Note:</strong> No new articles were found in the selected feeds for this period.</p>"
@@ -182,12 +139,12 @@ def create_email_body(news_data, customer_name):
     """
     return html
 
-def send_email(recipient_email, subject, html_content):
+def send_email(subject, html_content):
     """Sends the email via SMTP."""
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
     msg['From'] = SENDER_EMAIL
-    msg['To'] = recipient_email
+    msg['To'] = RECIPIENT_EMAIL
 
     part = MIMEText(html_content, 'html')
     msg.attach(part)
@@ -197,43 +154,27 @@ def send_email(recipient_email, subject, html_content):
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
-        print(f"Email sent successfully to {recipient_email}!")
+        print("Email sent successfully!")
     except Exception as e:
-        print(f"Failed to send email to {recipient_email}: {e}")
+        print(f"Failed to send email: {e}")
 
 def main():
-    # 1. Load Customers
-    customers = load_customers()
-    if not customers:
-        print("No customers found. Exiting.")
-        return
-
-    print(f"Processing {len(customers)} customers...")
-
-    for customer in customers:
-        print(f"\n--- Processing: {customer['name']} ({customer['email']}) ---")
-        
-        # 2. Determine Feeds
-        feeds_to_use = get_feeds_for_customer(customer['topics'], customer['links'])
-        
-        if not feeds_to_use:
-            print(f"No valid feeds found for {customer['name']}. Skipping.")
-            continue
-
-        # 3. Fetch News
-        news_data = fetch_news(feeds_to_use, days_back=7)
-        
-        # 4. Create Content
-        subject = f"Weekly Sustainability News: {datetime.now().strftime('%Y-%m-%d')}"
-        html_body = create_email_body(news_data, customer['name'])
-        
-        # 5. Send Email
-        # Uncomment the line below to actually send the email
-        send_email(customer['email'], subject, html_body)
-        
-        # For testing without sending, you can uncomment these lines instead:
-        # print(f"Preview of Email Subject: {subject}")
-        # print(f"Total articles found: {sum(len(v) for v in news_data.values())}")
+    # 1. Fetch News
+    news_data = fetch_news(TOPICS, days_back=7)
+    
+    # 2. Create Content
+    subject = f"Weekly Sustainability News: {datetime.now().strftime('%Y-%m-%d')}"
+    html_body = create_email_body(news_data)
+    
+    # 3. Send Email
+    # Uncomment the line below to actually send the email
+    # send_email(subject, html_body)
+    
+    # For testing, we just print to console first
+    print(f"\n--- Preview of Email Subject: {subject} ---")
+    print(f"Total articles found: {sum(len(v) for v in news_data.values())}")
+    for topic, items in news_data.items():
+        print(f"- {topic}: {len(items)} items")
 
 if __name__ == "__main__":
     main()
