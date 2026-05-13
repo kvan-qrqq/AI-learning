@@ -1,0 +1,4 @@
+customer_name,customer_email,customer_topics,customer_web_links
+Acme Corp,acme@example.com,"energy,climate",""
+GreenTech Ltd,contact@greentech.com,"waste,biodiversity","https://www.wastedive.com/feeds/news/,https://www.sciencedaily.com/news/earth_climate/biodiversity/"
+ChemSolutions,info@chemsolutions.com,"chemical,wastewater",""
